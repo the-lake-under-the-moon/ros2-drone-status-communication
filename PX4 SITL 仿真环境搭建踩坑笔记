@@ -1,0 +1,73 @@
+## 项目概述
+在 Ubuntu 22.04 虚拟机中从源码编译 PX4 固件，搭建基于 Gazebo Garden 的软件在环仿真环境，成功启动 X500 四旋翼模型。
+
+## 环境信息
+- 宿主机：Windows 10
+- 虚拟机：VirtualBox 7.0
+- 操作系统：Ubuntu 22.04
+- ROS 版本：ROS 2 Humble
+- PX4 版本：v1.17.0-alpha1 (main 分支)
+- 仿真器：Gazebo Garden 8.x
+
+## 踩坑清单
+
+### 坑1：GitHub 克隆速度极慢甚至连接拒绝
+**现象**：`git clone --recursive` 下载主仓库时频繁断连，子模块拉取失败。  
+**原因**：虚拟机网络走的是宿主机的网络，但 HTTPS 443 端口被运营商限制或代理失效。  
+**解决**：
+1. 尝试 SSH 克隆：`git clone git@github.com:PX4/PX4-Autopilot.git --recursive --depth 1`
+2. 最终采用 Windows 下载 ZIP → VirtualBox 共享文件夹 → 手动补全子模块。
+3. 后续子模块拉取用 Gitee 镜像替代 GitHub 地址。
+
+### 坑2：子模块缺失导致 `heatshrink_decoder.c not found`
+**现象**：CMake 报错 `Cannot find source file: heatshrink/heatshrink_decoder.c`  
+**原因**：解压 ZIP 包时不包含子模块源码，目录下只有 `.git` 空文件。  
+**解决**：
+```bash
+rm -rf src/lib/heatshrink/heatshrink
+git submodule update --init src/lib/heatshrink/heatshrink
+坑3：光流插件子模块连环缺失
+现象：CMake 报错 PX4-OpticalFlow/CMakeLists.txt not found，然后 klt_feature_tracker 也缺失。
+原因：光流插件依赖 PX4-OpticalFlow 和 klt_feature_tracker 两个嵌套子模块，网络不通导致空壳目录残留。
+解决：
+
+bash
+# 清理空壳并重新拉取
+rm -rf src/modules/simulation/gz_plugins/optical_flow/PX4-OpticalFlow
+git submodule update --init --recursive src/modules/simulation/gz_plugins/optical_flow/PX4-OpticalFlow
+当 GitHub 再次不通时，改为手动克隆到指定位置：
+
+bash
+git clone https://gitee.com/mirrors/klt_feature_tracker.git src/modules/simulation/gz_plugins/optical_flow/PX4-OpticalFlow/external/klt_feature_tracker
+坑4：Gazebo 组件缺失，CMake 找不到 gz-sim, gz-transport
+现象：CMake 输出 Could NOT find gz-sim, Could NOT find gz-transport，编译失败。
+原因：Gazebo Garden 的运行库 gz-garden 已安装，但开发库未安装。
+解决：
+
+bash
+sudo apt install -y libgz-sim7-dev libgz-transport12-dev libgz-sensors7-dev libgz-common5-dev libgz-math7-dev
+坑5：uXRCE-DDS-Client 子模块缺失
+现象：CMake 报错 Micro-XRCE-DDS-Client does not appear to contain CMakeLists.txt
+原因：子模块下载不完整。
+解决：
+尝试 git submodule update 失败后，手动克隆：
+
+bash
+cd src/modules/uxrce_dds_client
+rm -rf Micro-XRCE-DDS-Client
+git clone https://gitee.com/... Micro-XRCE-DDS-Client
+（若 Gitee 镜像不存在，最终选择注释掉父级 CMakeLists 中的引用，暂不编译该模块）
+
+坑6：make px4_sitl gz_x500 目标不存在
+现象：ninja: error: unknown target 'gz_x500'
+原因：CMake 未成功配置 Gazebo 目标。
+解决：补装开发库后，删除 build 目录重新编译。
+
+最终成功命令序列
+bash
+cd ~/PX4-Autopilot
+rm -rf build
+make px4_sitl gz_x500
+仿真启动后，Gazebo 窗口弹出红色 X500 无人机模型，终端输出 INFO [commander] Armed 等信息。
+
+
