@@ -27,6 +27,7 @@ setup(
             'talker = py_pubsub.publisher_drone_status:main',
             'listener = py_pubsub.subscriber_drone_status:main',
             'px4_listener = py_pubsub.px4_state_listener:main',
+            'yolo_detector = py_pubsub.yolo_detector:main',
         ],
     },
 )
